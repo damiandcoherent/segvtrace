@@ -1,0 +1,130 @@
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/sysinfo.h>
+#include <sys/syscall.h>
+#include <linux/perf_event.h>
+#include <sys/ioctl.h>
+#include <bpf/libbpf.h>
+#include "sigsegv-monitor.skel.h" 
+
+#define MAX_LBR_ENTRIES 32
+
+struct user_regs_t {
+    unsigned long long rip;
+    unsigned long long rsp;
+    unsigned long long rax;
+    unsigned long long rbx;
+    unsigned long long rcx;
+    unsigned long long rdx;
+    unsigned long long rsi;
+    unsigned long long rdi;
+    unsigned long long rbp;
+    unsigned long long r8;
+    unsigned long long r9;
+    unsigned long long r10;
+    unsigned long long r11;
+    unsigned long long r12;
+    unsigned long long r13;
+    unsigned long long r14;
+    unsigned long long r15;
+    unsigned long long flags;
+    unsigned long long cr2;
+};
+
+struct event_t {
+    unsigned int pid;
+    char comm[16];
+    unsigned int lbr_count;
+    struct user_regs_t regs;
+    struct perf_branch_entry lbr[MAX_LBR_ENTRIES];
+};
+
+void setup_global_lbr() {
+    int num_cpus = get_nprocs_conf();
+    printf("[*] Activating LBR hardware on %d CPUs...\n", num_cpus);
+
+    struct perf_event_attr pe = {0};
+    pe.type = PERF_TYPE_HARDWARE;
+    pe.size = sizeof(struct perf_event_attr);
+    pe.config = PERF_COUNT_HW_CPU_CYCLES; 
+    pe.sample_type = PERF_SAMPLE_BRANCH_STACK; 
+    pe.branch_sample_type = PERF_SAMPLE_BRANCH_ANY; 
+    pe.disabled = 1; 
+    pe.exclude_kernel = 1; 
+    pe.exclude_hv = 1;
+
+    for (int cpu = 0; cpu < num_cpus; cpu++) {
+        //                                          pid     group_fs, flags
+        int fd = syscall(__NR_perf_event_open, &pe, -1, cpu, -1, 0);
+
+        if (fd < 0) {
+            fprintf(stderr, "Failed to enable LBR on CPU %d (Root required?)\n", cpu);
+            continue;
+        }
+
+        ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+        ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+    }
+}
+
+void handle_event(void *ctx, int cpu, void *data, __u32 data_sz) {
+    struct event_t *e = data;
+
+    printf("\n------------ SIGSEGV Detected ----------------\n");
+    printf("PID: %d | COMM: %s\n", e->pid, e->comm);
+    
+    printf("\n--- Registers ---\n");
+    printf("RAX: 0x%016llx  RBX: 0x%016llx\n", e->regs.rax, e->regs.rbx);
+    printf("RCX: 0x%016llx  RDX: 0x%016llx\n", e->regs.rcx, e->regs.rdx);
+    printf("RSI: 0x%016llx  RDI: 0x%016llx\n", e->regs.rsi, e->regs.rdi);
+    printf("RBP: 0x%016llx  RSP: 0x%016llx\n", e->regs.rbp, e->regs.rsp);
+    printf("R8 : 0x%016llx  R9 : 0x%016llx\n", e->regs.r8,  e->regs.r9);
+    printf("R10: 0x%016llx  R11: 0x%016llx\n", e->regs.r10, e->regs.r11);
+    printf("R12: 0x%016llx  R13: 0x%016llx\n", e->regs.r12, e->regs.r13);
+    printf("R14: 0x%016llx  R15: 0x%016llx\n", e->regs.r14, e->regs.r15);
+    
+    printf("\nRIP: 0x%016llx  FLG: 0x%016llx\n", e->regs.rip, e->regs.flags);
+    printf("CR2: 0x%016llx\n", e->regs.cr2);   
+ 
+    printf("\n--- LBR Branch History (Last %d Jumps) ---\n", e->lbr_count);
+    // e->lbr_count it is enough in theory, the other check is just
+    // to enforce the limit
+    for (int i = 0; i < e->lbr_count && i < MAX_LBR_ENTRIES; i++) {
+        // Skip empty entries
+        if (e->lbr[i].from == 0 && e->lbr[i].to == 0) continue;
+
+        printf("#%-2d: 0x%llx  ->  0x%llx\n", 
+            i, 
+            (unsigned long long)e->lbr[i].from, 
+            (unsigned long long)e->lbr[i].to);
+    }
+    printf("--------------------------------------------\n");
+}
+
+int main() {
+    struct sigsegv_monitor_bpf *skel;
+    struct perf_buffer *pb = NULL;
+    
+    // Enable LBR: seems it is working that way...
+	setup_global_lbr();
+
+    skel = sigsegv_monitor_bpf__open();
+    if (!skel) return 1;
+
+    if (sigsegv_monitor_bpf__load(skel)) return 1;
+    if (sigsegv_monitor_bpf__attach(skel)) return 1;
+
+    pb = perf_buffer__new(bpf_map__fd(skel->maps.events), 8, handle_event, NULL, NULL, NULL);
+    if (!pb) return 1;
+    
+    printf("Monitoring for SIGSEGV... (Ctrl+C to stop)\n");
+
+    while (1) {
+        perf_buffer__poll(pb, 100);
+    }
+
+    return 0;
+}

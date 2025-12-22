@@ -1,0 +1,112 @@
+#include "vmlinux.h"
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_core_read.h>
+#include <bpf/bpf_tracing.h>
+
+// if /sys/kernel/tracing/trace_on  is set to 1,
+//   cat /sys/kernel/tracing/trace
+// will show the bpf_printk() output
+
+#define MAX_LBR_ENTRIES 16
+
+struct user_regs_t {
+    u64 rip;
+    u64 rsp;
+    u64 rax;
+    u64 rbx;
+    u64 rcx;
+    u64 rdx;
+    u64 rsi;
+    u64 rdi;
+    u64 rbp;
+    u64 r8;
+    u64 r9;
+    u64 r10;
+    u64 r11;
+    u64 r12;
+    u64 r13;
+    u64 r14;
+    u64 r15;
+    u64 flags;
+	u64 cr2;
+};
+
+struct event_t {
+    u32 pid;
+    char comm[16];
+    u32 lbr_count;
+    struct user_regs_t regs;
+    struct perf_branch_entry lbr[MAX_LBR_ENTRIES];
+};
+
+// Output map (for user space)
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(u32));
+    __uint(value_size, sizeof(u32));
+} events SEC(".maps");
+
+// event_t is too big for the eBPF stack.
+// This map store only 1 entry and it is per-cpu
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, u32);
+    __type(value, struct event_t);
+} heap SEC(".maps");
+
+SEC("tracepoint/signal/signal_generate")
+int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
+    struct task_struct *task = NULL;
+    struct pt_regs *regs = NULL;
+    struct event_t *event;
+    u32 key = 0;
+
+    if (ctx->sig != 11)
+        return 0;
+
+    event = bpf_map_lookup_elem(&heap, &key);
+    if (!event)
+        return 0; // Should never happen
+
+	task = bpf_get_current_task_btf();
+    event->pid = task->pid;
+	bpf_probe_read_kernel_str(&event->comm, sizeof(event->comm), &task->comm);
+
+	regs = (struct pt_regs *)bpf_task_pt_regs(task);
+
+	if (regs) {
+		event->regs.rip = BPF_CORE_READ(regs, ip);
+        event->regs.rsp = BPF_CORE_READ(regs, sp);
+        event->regs.rax = BPF_CORE_READ(regs, ax);
+        event->regs.rbx = BPF_CORE_READ(regs, bx);
+        event->regs.rcx = BPF_CORE_READ(regs, cx);
+        event->regs.rdx = BPF_CORE_READ(regs, dx);
+        event->regs.rsi = BPF_CORE_READ(regs, si);
+        event->regs.rdi = BPF_CORE_READ(regs, di);
+        event->regs.rbp = BPF_CORE_READ(regs, bp);
+        event->regs.r8  = BPF_CORE_READ(regs, r8);
+        event->regs.r9  = BPF_CORE_READ(regs, r9);
+        event->regs.r10 = BPF_CORE_READ(regs, r10);
+        event->regs.r11 = BPF_CORE_READ(regs, r11);
+        event->regs.r12 = BPF_CORE_READ(regs, r12);
+        event->regs.r13 = BPF_CORE_READ(regs, r13);
+        event->regs.r14 = BPF_CORE_READ(regs, r14);
+        event->regs.r15 = BPF_CORE_READ(regs, r15);
+        event->regs.flags = BPF_CORE_READ(regs, flags);
+        
+		event->regs.cr2 = BPF_CORE_READ(task, thread.cr2);
+	}
+
+    long ret = bpf_get_branch_snapshot(&event->lbr, sizeof(event->lbr), 0);
+    
+    if (ret > 0) {
+        event->lbr_count = ret / sizeof(struct perf_branch_entry);
+        // BPF_F_CURRENT_CPU -> "index of current core should be used"
+        bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, event, sizeof(*event));
+    }
+
+    return 0;
+}
+
+char LICENSE[] SEC("license") = "GPL";
