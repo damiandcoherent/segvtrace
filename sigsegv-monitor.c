@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/sysinfo.h>
 #include <sys/syscall.h>
 #include <linux/perf_event.h>
@@ -13,6 +14,7 @@
 #define MAX_LBR_ENTRIES 32
 #define LOG_FILE_NAME   "sigsegv-events.log"
 
+static volatile sig_atomic_t running = 1;
 
 struct user_regs_t {
     unsigned long long rip;
@@ -114,10 +116,17 @@ void handle_event(void *ctx, int cpu, void *data, __u32 data_sz) {
     fclose(fp);
 }
 
+void sigint_handler(int dummy) {
+    running = 0;
+}
+
 int main() {
     struct sigsegv_monitor_bpf *skel;
     struct perf_buffer *pb = NULL;
     
+    // Stop running if CTRL+C is entered
+    signal(SIGINT, sigint_handler);
+
     // Enable LBR: seems it is working that way...
 	setup_global_lbr();
 
@@ -130,11 +139,13 @@ int main() {
     pb = perf_buffer__new(bpf_map__fd(skel->maps.events), 8, handle_event, NULL, NULL, NULL);
     if (!pb) return 1;
     
-    printf("Monitoring for SIGSEGV... (Ctrl+C to stop)\n");
+    printf("[*] Monitoring for SIGSEGV... (Ctrl+C to stop)\n");
 
-    while (1) {
+    while (running) {
         perf_buffer__poll(pb, 100);
     }
+
+    printf("\b\b[*] Exiting the program...\n");
 
     return 0;
 }
