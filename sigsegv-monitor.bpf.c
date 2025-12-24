@@ -3,6 +3,10 @@
 #include <bpf/bpf_core_read.h>
 #include <bpf/bpf_tracing.h>
 
+// By default is commented: a lot of #PF events are hit
+// so enable only if it is acceptable.
+// #define TRACE_PF_CR2
+
 // if /sys/kernel/tracing/trace_on  is set to 1,
 //   cat /sys/kernel/tracing/trace
 // will show the bpf_printk() output
@@ -32,6 +36,7 @@ struct user_regs_t {
     u64 cr2_fault;
 };
 
+#ifdef TRACE_PF_CR2
 struct trace_event_raw_page_fault_user {
     struct trace_entry ent;
     unsigned long address;
@@ -46,6 +51,7 @@ struct {
     __type(key, u32);
     __type(value, u64);
 } tgid_cr2 SEC(".maps");
+#endif
 
 struct event_t {
     u32 pid;
@@ -77,7 +83,6 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
     struct pt_regs *regs = NULL;
     struct event_t *event;
     u32 key = 0;
-    u32 tgid;
 
     if (ctx->sig != 11)
         return 0;
@@ -113,13 +118,17 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
         event->regs.flags = BPF_CORE_READ(regs, flags);
         
 		event->regs.cr2 = BPF_CORE_READ(task, thread.cr2);
-        tgid = task->tgid;
+		event->regs.cr2_fault = -1;
+
+        #ifdef TRACE_PF_CR2
+        u32 tgid = task->tgid;
         u64 *cr2 = bpf_map_lookup_elem(&tgid_cr2, &tgid);
 
         if (cr2) {
             event->regs.cr2_fault = *cr2;
             bpf_map_delete_elem(&tgid_cr2, &tgid);
         }
+        #endif
 	}
 
     long ret = bpf_get_branch_snapshot(&event->lbr, sizeof(event->lbr), 0);
@@ -133,7 +142,7 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
     return 0;
 }
 
-
+#ifdef TRACE_PF_CR2
 SEC("tracepoint/exceptions/page_fault_user")
 int trace_page_fault(struct trace_event_raw_page_fault_user *ctx) {
     u64 cr2;
@@ -146,5 +155,6 @@ int trace_page_fault(struct trace_event_raw_page_fault_user *ctx) {
 
     return 0;
 }
+#endif
 
 char LICENSE[] SEC("license") = "GPL";

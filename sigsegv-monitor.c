@@ -114,9 +114,12 @@ void handle_event(void *ctx, int cpu, void *data, __u32 data_sz) {
     LOG("R14: 0x%016llx  R15: 0x%016llx\n", e->regs.r14, e->regs.r15);
 
     LOG("\nRIP: 0x%016llx  FLG: 0x%016llx\n", e->regs.rip, e->regs.flags);
-    LOG("CR2: 0x%016llx, #PF CR2: %016llx\n", e->regs.cr2, e->regs.cr2_fault);
+    LOG("CR2: 0x%016llx ", e->regs.cr2);
+   
+     if (e->regs.cr2_fault != -1)
+       LOG("#PF CR2: %016llx", e->regs.cr2_fault);
  
-    LOG("\n--- LBR Branch History (Last %d Jumps) ---\n", e->lbr_count);
+    LOG("\n\n--- LBR Branch Record (Last %d Jumps) ---\n", e->lbr_count);
     // e->lbr_count it is enough in theory, the other check is just
     // to enforce the limit
     int i;
