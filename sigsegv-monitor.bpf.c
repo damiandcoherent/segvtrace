@@ -60,8 +60,10 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
         return 0; // Should never happen
 
     task = bpf_get_current_task_btf();
+    event->tgid = task->tgid;
     event->pid = task->pid;
     bpf_probe_read_kernel_str(&event->comm, sizeof(event->comm), &task->comm);
+    bpf_probe_read_kernel_str(&event->tgleader_comm, sizeof(event->tgleader_comm), &task->group_leader->comm);
 
     regs = (struct pt_regs *)bpf_task_pt_regs(task);
 

@@ -68,7 +68,7 @@ void handle_event(void *ctx, int cpu, void *data, __u32 data_sz) {
     struct event_t *e = data;
 
     printf("\n------------ SIGSEGV Detected ----------------\n");
-    printf("CPU: %d | PID: %d | COMM: %s\n", cpu, e->pid, e->comm);
+    printf("CPU: %d | PID: %d | PCOMM: %s | TID: %d | TCOMM: %s\n", cpu, e->tgid, e->tgleader_comm, e->pid, e->comm);
 
     printf("\n--- Registers ---\n");
     printf("RAX: 0x%016llx  RBX: 0x%016llx\n", e->regs.rax, e->regs.rbx);
