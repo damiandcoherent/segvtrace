@@ -89,49 +89,41 @@ void setup_global_lbr() {
     }
 }
 
-#define LOG(fmt, ...) { \
-    printf(fmt, ##__VA_ARGS__); \
-    fprintf(fp, fmt, ##__VA_ARGS__); \
-}
-
 void handle_event(void *ctx, int cpu, void *data, __u32 data_sz) {
     struct event_t *e = data;
-    FILE *fp = fopen(LOG_FILE_NAME,"a");
 
-    LOG("\n------------ SIGSEGV Detected ----------------\n");
-    LOG("CPU: %d | PID: %d | COMM: %s\n", cpu, e->pid, e->comm);
+    printf("\n------------ SIGSEGV Detected ----------------\n");
+    printf("CPU: %d | PID: %d | COMM: %s\n", cpu, e->pid, e->comm);
 
-    LOG("\n--- Registers ---\n");
-    LOG("RAX: 0x%016llx  RBX: 0x%016llx\n", e->regs.rax, e->regs.rbx);
-    LOG("RCX: 0x%016llx  RDX: 0x%016llx\n", e->regs.rcx, e->regs.rdx);
-    LOG("RSI: 0x%016llx  RDI: 0x%016llx\n", e->regs.rsi, e->regs.rdi);
-    LOG("RBP: 0x%016llx  RSP: 0x%016llx\n", e->regs.rbp, e->regs.rsp);
-    LOG("R8 : 0x%016llx  R9 : 0x%016llx\n", e->regs.r8,  e->regs.r9);
-    LOG("R10: 0x%016llx  R11: 0x%016llx\n", e->regs.r10, e->regs.r11);
-    LOG("R12: 0x%016llx  R13: 0x%016llx\n", e->regs.r12, e->regs.r13);
-    LOG("R14: 0x%016llx  R15: 0x%016llx\n", e->regs.r14, e->regs.r15);
+    printf("\n--- Registers ---\n");
+    printf("RAX: 0x%016llx  RBX: 0x%016llx\n", e->regs.rax, e->regs.rbx);
+    printf("RCX: 0x%016llx  RDX: 0x%016llx\n", e->regs.rcx, e->regs.rdx);
+    printf("RSI: 0x%016llx  RDI: 0x%016llx\n", e->regs.rsi, e->regs.rdi);
+    printf("RBP: 0x%016llx  RSP: 0x%016llx\n", e->regs.rbp, e->regs.rsp);
+    printf("R8 : 0x%016llx  R9 : 0x%016llx\n", e->regs.r8,  e->regs.r9);
+    printf("R10: 0x%016llx  R11: 0x%016llx\n", e->regs.r10, e->regs.r11);
+    printf("R12: 0x%016llx  R13: 0x%016llx\n", e->regs.r12, e->regs.r13);
+    printf("R14: 0x%016llx  R15: 0x%016llx\n", e->regs.r14, e->regs.r15);
 
-    LOG("\nRIP: 0x%016llx  FLG: 0x%016llx\n", e->regs.rip, e->regs.flags);
-    LOG("CR2: 0x%016llx ", e->regs.cr2);
-   
+    printf("\nRIP: 0x%016llx  FLG: 0x%016llx\n", e->regs.rip, e->regs.flags);
+    printf("CR2: 0x%016llx ", e->regs.cr2);
+
      if (e->regs.cr2_fault != -1)
-       LOG("#PF CR2: %016llx", e->regs.cr2_fault);
- 
-    LOG("\n\n--- LBR Branch Record (Last %d Jumps) ---\n", e->lbr_count);
+       printf("#PF CR2: %016llx", e->regs.cr2_fault);
+
+    printf("\n\n--- LBR Branch Record (Last %d Jumps) ---\n", e->lbr_count);
     // e->lbr_count it is enough in theory, the other check is just
     // to enforce the limit
     for_each(i, e->lbr_count && i < MAX_LBR_ENTRIES) {
         // Skip empty entries
         if (e->lbr[i].from == 0 && e->lbr[i].to == 0) continue;
 
-        LOG("#%-2d: 0x%llx  ->  0x%llx\n",
+        printf("#%-2d: 0x%llx  ->  0x%llx\n",
             i,
             (unsigned long long)e->lbr[i].from,
             (unsigned long long)e->lbr[i].to);
     }
-    LOG("--------------------------------------------\n");
-
-    fclose(fp);
+    printf("--------------------------------------------\n");
 }
 
 void sigint_handler(int dummy) {
@@ -166,14 +158,14 @@ int main() {
 
     pb = perf_buffer__new(bpf_map__fd(skel->maps.events), 8, handle_event, NULL, NULL, NULL);
     if (!pb) return 1;
-    
-    printf("[*] Monitoring for SIGSEGV... (Ctrl+C to stop)\n");
+
+    fprintf(stderr, "[*] Monitoring for SIGSEGV... (Ctrl+C to stop)\n");
 
     while (running) {
         perf_buffer__poll(pb, 100);
     }
 
-    printf("\b\b[*] Exiting the program...\n");
+    fprintf(stderr, "\b\b[*] Exiting the program...\n");
 
     clean();
 
