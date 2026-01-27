@@ -29,7 +29,9 @@ all: $(APP)
 
 $(VMLINUX):
 	@echo "  GEN     $@"
-	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $@
+	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $@.tmp
+	# Don't create the target if btf fails
+	@mv $@.tmp $@
 
 $(BPF_OBJ): $(BPF_SRC) $(VMLINUX)
 	@echo "  BPF     $@"
