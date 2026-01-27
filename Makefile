@@ -27,11 +27,11 @@ LIBS := -lbpf -lelf -lz
 
 all: $(APP)
 
+.DELETE_ON_ERROR:
+
 $(VMLINUX):
 	@echo "  GEN     $@"
-	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $@.tmp
-	# Don't create the target if btf fails
-	@mv $@.tmp $@
+	$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $@
 
 $(BPF_OBJ): $(BPF_SRC) $(VMLINUX)
 	@echo "  BPF     $@"
