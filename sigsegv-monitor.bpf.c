@@ -131,6 +131,7 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
         #endif
     }
 
+    // TODO: shouldn't this be at the top of the function?
     long ret = bpf_get_branch_snapshot(&event->lbr, sizeof(event->lbr), 0);
     
     if (ret > 0) {

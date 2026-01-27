@@ -53,6 +53,7 @@ struct event_t {
     struct perf_branch_entry lbr[MAX_LBR_ENTRIES];
 };
 
+// TODO: do we need this to enable LBR? We take the samples from within the eBPF program...
 void setup_global_lbr() {
     int num_cpus = get_nprocs_conf();
     printf("[*] Activating LBR hardware on %d CPUs...\n", num_cpus);
