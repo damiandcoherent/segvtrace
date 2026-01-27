@@ -63,10 +63,15 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
 
     task = bpf_get_current_task_btf();
     event->tgid = task->tgid;
-    event->pid = task->pid;
+    event->pid = task->pid; // TODO: why no CORE?
     bpf_probe_read_kernel_str(&event->comm, sizeof(event->comm), &task->comm);
     bpf_probe_read_kernel_str(&event->tgleader_comm, sizeof(event->tgleader_comm), &task->group_leader->comm);
 
+    // TODO: why BPF_CORE_READ?
+    event->regs.trapno = task->thread.trap_nr; // TODO: also copy the other fields like cr2 and error_code
+    event->regs.err = BPF_CORE_READ(task, thread.error_code); // TODO: nested CORE?
+
+    // TODO: where does this come from?
     regs = (struct pt_regs *)bpf_task_pt_regs(task);
 
     if (regs) {
@@ -88,10 +93,8 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
         event->regs.r14 = BPF_CORE_READ(regs, r14);
         event->regs.r15 = BPF_CORE_READ(regs, r15);
         event->regs.flags = BPF_CORE_READ(regs, flags);
-        event->regs.trapno = BPF_CORE_READ(regs, orig_ax); // TODO: looks wrong!!
-        event->regs.err = BPF_CORE_READ(task, thread.error_code);
 
-        event->regs.cr2 = BPF_CORE_READ(task, thread.cr2);
+        event->regs.cr2 = BPF_CORE_READ(task, thread.cr2); // TODO: nested CORE?
         event->regs.cr2_fault = -1;
 
         #ifdef TRACE_PF_CR2
