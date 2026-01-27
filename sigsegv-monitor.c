@@ -74,8 +74,6 @@ void setup_global_lbr() {
     pe.exclude_kernel = 1; 
     pe.exclude_hv = 1;
 
-    int cpu;
-
     for_each_cpu(cpu) {
         //                                          pid     group_fs, flags
         int fd = syscall(__NR_perf_event_open, &pe, -1, cpu, -1, 0);
@@ -123,7 +121,6 @@ void handle_event(void *ctx, int cpu, void *data, __u32 data_sz) {
     LOG("\n\n--- LBR Branch Record (Last %d Jumps) ---\n", e->lbr_count);
     // e->lbr_count it is enough in theory, the other check is just
     // to enforce the limit
-    int i;
     for_each(i, e->lbr_count && i < MAX_LBR_ENTRIES) {
         // Skip empty entries
         if (e->lbr[i].from == 0 && e->lbr[i].to == 0) continue;
@@ -144,8 +141,6 @@ void sigint_handler(int dummy) {
 
 void clean() {
     if (!cpus_fd) return;
-
-    int cpu;
 
     for_each_cpu(cpu) {
        ioctl(cpus_fd[cpu], PERF_EVENT_IOC_DISABLE, 0);
