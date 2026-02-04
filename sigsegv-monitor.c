@@ -69,8 +69,8 @@ void handle_event(void *ctx, int cpu, void *data, __u32 data_sz) {
 
     printf("{\"cpu\":%d,", cpu);
     printf("\"tai\":%llu,", e->tai);
-    printf("\"process\":{\"pid\":%d,\"comm\":\"%s\"},", e->tgid, e->tgleader_comm);
-    printf("\"thread\":{\"tid\":%d,\"comm\":\"%s\"},", e->pid, e->comm);
+    printf("\"process\":{\"rootns_pid\":%d,\"ns_pid\":%d,\"comm\":\"%s\"},", e->tgid, e->pidns_tgid, e->tgleader_comm);
+    printf("\"thread\":{\"rootns_tid\":%d,\"ns_tid\":%d,\"comm\":\"%s\"},", e->pid, e->pidns_pid, e->comm);
     printf("\"si_code\":%d,", e->si_code);
     printf("\"registers\":{");
     printf("\"rax\":\"0x%016llx\",", e->regs.rax);

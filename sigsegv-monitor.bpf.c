@@ -45,6 +45,12 @@ struct {
     __type(value, struct event_t);
 } heap SEC(".maps");
 
+inline void split_2u32(u64 in, u32* lower, u32* upper)
+{
+    *lower = (u32)in;
+    *upper = (u32)(in >> 32);
+}
+
 SEC("tracepoint/signal/signal_generate")
 int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
     struct task_struct *task = NULL;
@@ -62,11 +68,19 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
     event->si_code = ctx->code;
     event->tai = bpf_ktime_get_tai_ns();
 
+    split_2u32(bpf_get_current_pid_tgid(), &event->pid, &event->tgid);
+
     task = bpf_get_current_task_btf();
-    event->tgid = task->tgid;
-    event->pid = task->pid; // TODO: why no CORE?
     bpf_probe_read_kernel_str(&event->comm, sizeof(event->comm), &task->comm);
     bpf_probe_read_kernel_str(&event->tgleader_comm, sizeof(event->tgleader_comm), &task->group_leader->comm);
+    // TODO: pidns_tgid, pidns_pid
+    struct pid const* thread_pid = task->thread_pid;
+    //struct upid const upid = thread_pid->numbers[pid->level];
+    event->pidns_pid = BPF_CORE_READ(thread_pid->numbers + thread_pid->level, nr);
+    struct pid const* tgid_pid = task->signal->pids[PIDTYPE_TGID];
+    // doesn't this return the pid in the NS of the tg leader, instead of the pid in the NS of the current thread?
+    // TODO: RCU!
+    event->pidns_tgid = BPF_CORE_READ(tgid_pid->numbers + tgid_pid->level, nr);
 
     // TODO: why BPF_CORE_READ?
     event->regs.trapno = task->thread.trap_nr; // TODO: also copy the other fields like cr2 and error_code
