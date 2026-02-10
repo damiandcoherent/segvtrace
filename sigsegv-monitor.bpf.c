@@ -73,20 +73,21 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
     task = bpf_get_current_task_btf();
     bpf_probe_read_kernel_str(&event->comm, sizeof(event->comm), &task->comm);
     bpf_probe_read_kernel_str(&event->tgleader_comm, sizeof(event->tgleader_comm), &task->group_leader->comm);
-    // TODO: pidns_tgid, pidns_pid
+    // TODO: can the acquisition of pidns_tgid, pidns_pid be made more robust / simplified?
     struct pid const* thread_pid = task->thread_pid;
+    // TODO: look up why this isn't allowed; it doesn't seem to be the pointer arithmetic
     //struct upid const upid = thread_pid->numbers[pid->level];
     event->pidns_pid = BPF_CORE_READ(thread_pid->numbers + thread_pid->level, nr);
     struct pid const* tgid_pid = task->signal->pids[PIDTYPE_TGID];
-    // doesn't this return the pid in the NS of the tg leader, instead of the pid in the NS of the current thread?
-    // TODO: RCU!
+    // TODO: doesn't this return the pid in the NS of the tg leader, instead of the pid in the NS of the current thread?
+    // TODO: don't we need RCU here?
     event->pidns_tgid = BPF_CORE_READ(tgid_pid->numbers + tgid_pid->level, nr);
 
-    // TODO: why BPF_CORE_READ?
     event->regs.trapno = task->thread.trap_nr; // TODO: also copy the other fields like cr2 and error_code
+    // TODO: why BPF_CORE_READ?
     event->regs.err = BPF_CORE_READ(task, thread.error_code); // TODO: nested CORE?
 
-    // TODO: where does this come from?
+    // TODO: how are these regs acquired?
     regs = (struct pt_regs *)bpf_task_pt_regs(task);
 
     if (regs) {
@@ -123,7 +124,7 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
         #endif
     }
 
-    // TODO: shouldn't this be at the top of the function?
+    // TODO: when is this snapshot taken? or does the CPU not do LBR in the kernel?
     long ret = bpf_get_branch_snapshot(&event->lbr, sizeof(event->lbr), 0);
     if (ret > 0) {
         event->lbr_count = ret / sizeof(struct perf_branch_entry);
