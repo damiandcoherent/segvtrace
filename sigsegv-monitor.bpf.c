@@ -74,14 +74,23 @@ int trace_sigsegv(struct trace_event_raw_signal_generate *ctx) {
     bpf_probe_read_kernel_str(&event->comm, sizeof(event->comm), &task->comm);
     bpf_probe_read_kernel_str(&event->tgleader_comm, sizeof(event->tgleader_comm), &task->group_leader->comm);
     // TODO: can the acquisition of pidns_tgid, pidns_pid be made more robust / simplified?
-    struct pid const* thread_pid = task->thread_pid;
-    // TODO: look up why this isn't allowed; it doesn't seem to be the pointer arithmetic
-    //struct upid const upid = thread_pid->numbers[pid->level];
-    event->pidns_pid = BPF_CORE_READ(thread_pid->numbers + thread_pid->level, nr);
-    struct pid const* tgid_pid = task->signal->pids[PIDTYPE_TGID];
-    // TODO: doesn't this return the pid in the NS of the tg leader, instead of the pid in the NS of the current thread?
-    // TODO: don't we need RCU here?
-    event->pidns_tgid = BPF_CORE_READ(tgid_pid->numbers + tgid_pid->level, nr);
+    {
+		struct pid const* thread_pid = task->thread_pid;
+		unsigned int const level = thread_pid->level;
+		// thread_pid->numbers is a size-one flexible array member (type numbers[1])
+		// => cannot perform bounds-check against BTF information
+		// => need bpf_probe_read_kernel to read from indices potentially > 1
+		struct upid const* upid_inv = &thread_pid->numbers[level];
+		event->pidns_pid = BPF_CORE_READ(upid_inv, nr); // we already have implicit CO-RE, but we need the probe function call
+	}
+	{
+		struct pid const* tgid_pid = task->signal->pids[PIDTYPE_TGID];
+		unsigned int const level = tgid_pid->level;
+		struct upid const* tgid_upid_inv = &tgid_pid->numbers[level];
+		// TODO: doesn't this return the pid in the NS of the tg leader, instead of the pid in the NS of the current thread?
+		// TODO: don't we need RCU here?
+		event->pidns_tgid = BPF_CORE_READ(tgid_upid_inv, nr);
+	}
 
     event->regs.trapno = task->thread.trap_nr; // TODO: also copy the other fields like cr2 and error_code
     // TODO: why BPF_CORE_READ?
